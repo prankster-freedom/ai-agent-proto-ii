@@ -1,50 +1,44 @@
+<!DOCTYPE html>
 <html>
-
 <head>
-	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<title>Baking with Gemini</title>
-	<link rel="stylesheet" href="/style.css">
+  <meta charset="utf-8">
+  <title>Growing Myself Agent Eye</title>
+  <link type="text/css" rel="stylesheet" href="/style.css">
 </head>
-
 <body>
-	<main>
-		<div class="api-key-banner">
-			To get started with the Gemini API,
-			<a href="https://g.co/ai/idxGetGeminiKey" target="_blank">
-				get an API key</a> and set it in the <code>.idx/dev.nix</code> file
-			<br><br>
-			Then rebuild the enviroment and delete this banner
-		</div>
+  <div id="app">
+    <header>
+      <h1>Growing Myself Agent Eye</h1>
+      <div id="user-info" style="display: none;">
+        <span id="user-name"></span>
+        <button id="sign-out">Sign Out</button>
+      </div>
+    </header>
 
-		<h1 class="title">Baking with Gemini</h1>
-		<form>
-			<div class="image-picker">
-				<label class="image-choice">
-					<input type="radio" name="chosenImage" value="baked_goods_1.jpeg" checked>
-					<img src="/images/baked_goods_1.jpeg">
-				</label>
-				<label class="image-choice">
-					<input type="radio" name="chosenImage" value="baked_goods_2.jpeg">
-					<img src="/images/baked_goods_2.jpeg">
-				</label>
-				<label class="image-choice">
-					<input type="radio" name="chosenImage" value="baked_goods_3.jpeg">
-					<img src="/images/baked_goods_3.jpeg">
-				</label>
-			</div>
-			<div class="prompt-box">
-				<label>
-					<input name="prompt" placeholder="Enter instructions here" type="text"
-						value="Provide an example recipe for the baked goods in the image">
-				</label>
-				<button type="submit">Go</button>
-			</div>
-		</form>
-		<p class="output">(Response will appear here)</p>
-	</main>
+    <div id="auth-container">
+      <button id="sign-in">Sign in with Google</button>
+    </div>
 
-	<script src="https://unpkg.com/markdown-it@8.4.2/dist/markdown-it.min.js"></script>
-	<script src="/main.js"></script>
+    <main id="chat-container" style="display: none;">
+      <div id="chat-history"></div>
+      <form id="chat-form">
+        <input type="text" id="chat-input" placeholder="Type a message..." autocomplete="off">
+        <button type="submit">Send</button>
+      </form>
+    </main>
+
+    <footer id="footer-container" style="display: none;">
+        <button id="delete-memory">Delete My Memory</button>
+    </footer>
+
+  </div>
+
+  <!-- Firebase SDKs -->
+  <script src="/firebase/firebase-app.js"></script>
+  <script src="/firebase/firebase-auth.js"></script>
+  <script src="/firebase/firebase-firestore.js"></script>
+  <script src="/firebase/firebase-functions.js"></script>
+  
+  <script src="/main.js"></script>
 </body>
 </html>

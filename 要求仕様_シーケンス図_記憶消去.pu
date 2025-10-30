@@ -1,0 +1,31 @@
+@startuml
+title 記憶消去シーケンス (FR5)
+
+actor "ユーザー" as User
+participant "フロントエンド" as Frontend
+participant "Cloud Functions\n(onCall)" as Functions
+participant "Firestore" as Firestore
+
+User -> Frontend: 記憶の消去をリクエスト
+activate Frontend
+
+Frontend -> User: 本当に消去してよいか確認
+User -> Frontend: 消去を承認
+
+Frontend -> Functions: 記憶消去をリクエスト
+activate Functions
+
+note right of Functions: リクエストからユーザーIDを取得
+
+Functions -> Firestore: 該当ユーザーIDに紐づく全てのデータを削除
+activate Firestore
+Firestore --> Functions: 削除完了
+deactivate Firestore
+
+Functions --> Frontend: 消去完了を通知
+deactivate Functions
+
+Frontend -> User: 消去が完了したことを表示
+deactivate Frontend
+
+@enduml

@@ -1,0 +1,46 @@
+@startuml
+title Firestoreデータモデル
+
+skinparam classAttributeIconSize 0
+
+class "users (collection)" as Users {
+}
+
+class "{userId} (document)" as UserDoc {
+  + uid: string
+  + createdAt: Timestamp
+  + updatedAt: Timestamp
+}
+
+class "aiPersona (map)" as AiPersona {
+  + basePersonality: string
+  + updatedAt: Timestamp
+}
+
+class "chatHistory (collection)" as ChatHistory {
+}
+
+class "{messageId} (document)" as ChatMessage {
+  + role: "user" | "model"
+  + content: string
+  + timestamp: Timestamp
+}
+
+class "personalityAnalyses (collection)" as PersonalityAnalyses {
+}
+
+class "{analysisId} (document)" as PersonalityAnalysis {
+  + timestamp: Timestamp
+  + traits: Map<string, number>
+  + source: "daydream" | "dream"
+}
+
+
+Users "1" *-- "many" UserDoc
+UserDoc "1" *-- "1" AiPersona
+UserDoc "1" *-- "1" ChatHistory
+ChatHistory "1" *-- "many" ChatMessage
+UserDoc "1" *-- "1" PersonalityAnalyses
+PersonalityAnalyses "1" *-- "many" PersonalityAnalysis
+
+@enduml

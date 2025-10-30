@@ -1,0 +1,24 @@
+@startuml
+title 要求仕様_ユースケース図
+
+actor "ユーザー" as User
+
+rectangle "成長する私エージェント アイ" {
+  usecase "AIと対話する" as Chat
+  usecase "ユーザー認証を行う" as Authenticate
+  usecase "記憶を消去する" as DeleteMemory
+  usecase "AIが自律的に質問する" as AskQuestion
+  usecase "ユーザーの性格を学習する (daydream)" as Daydream
+  usecase "AIの性格を更新する (dream)" as Dream
+}
+
+actor "Cloud Scheduler" as Scheduler
+
+User -- Chat
+User -- Authenticate
+User -- DeleteMemory
+
+Chat <.. AskQuestion : <<extend>>
+Chat ..> Daydream : <<trigger>>
+Scheduler -- Dream
+@enduml
