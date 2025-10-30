@@ -34,14 +34,21 @@ const userName = document.getElementById('user-name');
 const authContainer = document.getElementById('auth-container');
 const chatContainer = document.getElementById('chat-container');
 const footerContainer = document.getElementById('footer-container');
+const chatHistory = document.getElementById('chat-history');
 
+let unsubscribeChatHistory = null;
 
 // --- Authentication ---
 const provider = new firebase.auth.GoogleAuthProvider();
 
 signInButton.onclick = () => auth.signInWithPopup(provider);
 
-signOutButton.onclick = () => auth.signOut();
+signOutButton.onclick = () => {
+    if (unsubscribeChatHistory) {
+        unsubscribeChatHistory();
+    }
+    auth.signOut();
+};
 
 auth.onAuthStateChanged(user => {
     if (user) {
@@ -52,7 +59,7 @@ auth.onAuthStateChanged(user => {
         chatContainer.style.display = 'block';
         footerContainer.style.display = 'block';
 
-        // TODO: Initialize chat, load history, etc.
+        listenToChatHistory(user.uid);
         console.log("User signed in:", user.uid);
 
     } else {
@@ -61,12 +68,42 @@ auth.onAuthStateChanged(user => {
         userInfo.style.display = 'none';
         chatContainer.style.display = 'none';
         footerContainer.style.display = 'none';
+        if (unsubscribeChatHistory) {
+            unsubscribeChatHistory();
+        }
+        chatHistory.innerHTML = ''; // Clear chat history on sign out
         console.log("User signed out");
     }
 });
 
-
 // --- Chat ---
+
+function listenToChatHistory(uid) {
+    const query = firestore.collection('users').doc(uid).collection('chatHistory').orderBy('timestamp');
+
+    unsubscribeChatHistory = query.onSnapshot(snapshot => {
+        chatHistory.innerHTML = ''; // Clear existing messages
+        snapshot.forEach(doc => {
+            const message = doc.data();
+            appendMessage(message.content, message.role);
+        });
+        scrollToBottom();
+    }, err => {
+        console.error("Error listening to chat history:", err);
+    });
+}
+
+function appendMessage(text, role) {
+    const messageElement = document.createElement('div');
+    messageElement.classList.add('message', `${role}-message`);
+    messageElement.textContent = text;
+    chatHistory.appendChild(messageElement);
+}
+
+function scrollToBottom() {
+    chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
 chatForm.onsubmit = async (e) => {
     e.preventDefault();
     const message = chatInput.value;
@@ -77,18 +114,19 @@ chatForm.onsubmit = async (e) => {
         return;
     }
 
-    console.log("Sending message to backend:", message);
+    appendMessage(message, 'user');
+    scrollToBottom();
 
     try {
         const chatFunction = functions.httpsCallable('chat');
-        // TODO: Add user message to UI
         const result = await chatFunction({ text: message });
-        // TODO: Add AI response to UI
+        // The AI response will be added by the onSnapshot listener
         console.log("Received response from backend:", result.data);
 
     } catch (error) {
         console.error("Error calling chat function:", error);
-        // TODO: Display error to user
+        appendMessage("Error: Could not get a response.", 'model-error');
+        scrollToBottom();
     }
 };
 
@@ -106,12 +144,11 @@ deleteMemoryButton.onclick = async () => {
         const deleteMemoryFunction = functions.httpsCallable('deleteMemory');
         await deleteMemoryFunction();
         console.log("Memory deletion successful.");
-        // TODO: Clear chat history from UI
+        // Chat history is cleared by the onSnapshot listener reacting to the deletion
         alert("Your memory has been deleted.");
 
     } catch (error) {
         console.error("Error calling deleteMemory function:", error);
-        // TODO: Display error to user
         alert("Failed to delete your memory.");
     }
 };
@@ -123,7 +160,6 @@ const IDLE_TIMEOUT = 3 * 60 * 1000; // 3 minutes
 function resetIdleTimer() {
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
-        // Timer expired, ask a question
         console.log("User idle, asking a question.");
         // TODO: Call backend to get a proactive question
     }, IDLE_TIMEOUT);
@@ -134,4 +170,3 @@ window.onload = resetIdleTimer;
 document.onmousemove = resetIdleTimer;
 document.onkeypress = resetIdleTimer;
 chatInput.onfocus = resetIdleTimer;
-

@@ -1,2 +1,4 @@
 firebase-admin
 firebase-functions
+google-cloud-aiplatform
+pyyaml
