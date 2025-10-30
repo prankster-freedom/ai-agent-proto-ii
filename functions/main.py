@@ -20,8 +20,8 @@ vertexai.init(project=PROJECT_ID, location=LOCATION)
 options.set_global_options(
     cors=options.CorsOptions(
         cors_origins=[
-            "http://localhost:5000", 
-            "http://127.0.0.1:5000", 
+            "http://localhost:5000",
+            "http://127.0.0.1:5000",
             f"https://{PROJECT_ID}.web.app"
         ],
         cors_methods=["GET", "POST"],
@@ -50,7 +50,6 @@ def chat(req: https_fn.CallableRequest) -> https_fn.Response:
     print(f"Chat request from UID: {uid}, Text: '{text}'")
 
     try:
-        # 1. Get AI Persona and Chat History
         user_ref = DB.collection('users').document(uid)
         persona_ref = user_ref.collection('aiPersona').document('current')
         history_ref = user_ref.collection('chatHistory')
@@ -67,8 +66,7 @@ def chat(req: https_fn.CallableRequest) -> https_fn.Response:
             base_personality = persona_doc.to_dict().get('basePersonality')
 
         chat_history_docs = history_ref.order_by('timestamp').limit_to_last(50).get()
-        
-        # 2. Call Gemini API
+
         model = GenerativeModel(GEMINI_MODEL, system_instruction=[base_personality])
         
         history = []
@@ -82,7 +80,6 @@ def chat(req: https_fn.CallableRequest) -> https_fn.Response:
 
         print(f"Gemini response for {uid}: '{ai_response}'")
 
-        # 3. Save messages to Firestore
         batch = DB.batch()
         user_message_ref = history_ref.document()
         batch.set(user_message_ref, {
@@ -98,12 +95,10 @@ def chat(req: https_fn.CallableRequest) -> https_fn.Response:
         })
         batch.commit()
 
-        # 4. Trigger Daydream if needed (DR11)
         user_message_count = len([doc for doc in chat_history_docs if doc.to_dict()['role'] == 'user']) + 1
         if user_message_count > 0 and user_message_count % 10 == 0:
             print(f"User message count for {uid} reached {user_message_count}, triggering daydream.")
-            # Run analysis in the background. The function will continue after returning the response.
-            create_personality_analysis(uid, 'daydream') 
+            create_personality_analysis(uid, 'daydream')
 
         return https_fn.Response({"text": ai_response})
 
@@ -124,7 +119,6 @@ def deleteMemory(req: https_fn.CallableRequest) -> https_fn.Response:
 
     try:
         user_ref = DB.collection('users').document(uid)
-        # This is a recursive delete, it will delete all subcollections.
         DB.recursive_delete(user_ref)
         print(f"Successfully deleted all data for user {uid}")
         return https_fn.Response({"status": "success"})
@@ -137,38 +131,32 @@ def deleteMemory(req: https_fn.CallableRequest) -> https_fn.Response:
 # --- Background Functions & Helpers ---
 
 def create_personality_analysis(uid: str, analysis_type: str):
-    """Analyzes chat history to extract personality traits (Daydream/Dream)."""
+    """Analyzes chat history to extract personality traits (Daydream)."""
     print(f"Starting personality analysis ({analysis_type}) for UID: {uid}")
     try:
         user_ref = DB.collection('users').document(uid)
         history_ref = user_ref.collection('chatHistory')
         analysis_ref = user_ref.collection('personalityAnalyses').document()
 
-        # 1. Get chat history
         docs = history_ref.order_by('timestamp', direction=firestore.Query.DESCENDING).limit(50).get()
         if not docs:
             print(f"No chat history found for {uid}. Skipping analysis.")
             return
         
-        # Format history for the prompt
         conversation_text = "\n".join([
             f"{d.to_dict().get('role')}: {d.to_dict().get('content')}"
-            for d in reversed(docs) # reverse to get chronological order
+            for d in reversed(docs)
         ])
         
-        # 2. Get analysis prompt
         prompt = _get_daydream_prompt()
         full_prompt = f"{prompt}\n\n--- 対話履歴 ---\n{conversation_text}\n--- 分析開始 ---"
         
-        # 3. Call Gemini API
         model = GenerativeModel(GEMINI_MODEL)
         response = model.generate_content(full_prompt)
         
-        # 4. Parse and save result
         analysis_result = _parse_yaml_from_text(response.text)
-        
         if not analysis_result:
-             raise ValueError("Failed to parse YAML from Gemini response.")
+            raise ValueError("Failed to parse YAML from Gemini response.")
 
         analysis_data = {
             'type': analysis_type,
@@ -179,18 +167,71 @@ def create_personality_analysis(uid: str, analysis_type: str):
         analysis_ref.set(analysis_data)
         print(f"Successfully created and saved personality analysis ({analysis_type}) for UID: {uid}")
 
+        if analysis_type == 'daydream':
+            daydream_analyses = user_ref.collection('personalityAnalyses').where('type', '==', 'daydream').get()
+            if len(daydream_analyses) > 0 and len(daydream_analyses) % 5 == 0:
+                print(f"Daydream count for {uid} reached {len(daydream_analyses)}, triggering dream.")
+                create_dream_analysis(uid)
+
     except Exception as e:
         print(f"Error in create_personality_analysis for UID {uid}: {e}")
-        # We don't throw HttpsError here because it's a background task.
+
+def create_dream_analysis(uid: str):
+    """Synthesizes personality analyses into a new AI persona (Dream)."""
+    print(f"Starting dream analysis for UID: {uid}")
+    try:
+        user_ref = DB.collection('users').document(uid)
+        persona_ref = user_ref.collection('aiPersona').document('current')
+
+        analyses_docs = user_ref.collection('personalityAnalyses') \
+            .where('type', '==', 'daydream') \
+            .order_by('timestamp', direction=firestore.Query.DESCENDING) \
+            .limit(50).get()
+
+        if len(analyses_docs) < 5:
+            print(f"Not enough daydream analyses to run a dream for {uid}. Found {len(analyses_docs)}.")
+            return
+
+        past_analyses_text = ""
+        for doc in reversed(analyses_docs):
+            analysis_data = doc.to_dict()
+            timestamp = analysis_data.get('timestamp').strftime('%Y-%m-%d')
+            analysis_yaml = yaml.dump(analysis_data.get('analysis'), allow_unicode=True)
+            past_analyses_text += f"--- Analysis from {timestamp} ---\n{analysis_yaml}\n\n"
+
+        current_persona_doc = persona_ref.get()
+        current_personality = current_persona_doc.to_dict().get('basePersonality') if current_persona_doc.exists else _create_default_persona()
+
+        prompt = _get_dream_prompt()
+        full_prompt = f"{prompt}\n\n--- 現在のAIの性格設定 ---\n{current_personality}\n\n--- 過去の性格分析結果 ---\n{past_analyses_text}--- 分析開始 ---"
+
+        model = GenerativeModel(GEMINI_MODEL)
+        response = model.generate_content(full_prompt)
+        new_personality = response.text.strip()
+        
+        dream_ref = user_ref.collection('personalityAnalyses').document()
+        dream_ref.set({
+            'type': 'dream',
+            'timestamp': firestore.SERVER_TIMESTAMP,
+            'newPersonality': new_personality,
+            'sourceAnalyses': [d.reference.path for d in analyses_docs]
+        })
+
+        persona_ref.update({
+            'basePersonality': new_personality,
+            'updatedAt': firestore.SERVER_TIMESTAMP
+        })
+        print(f"Successfully ran dream for {uid} and updated AI persona.")
+
+    except Exception as e:
+        print(f"Error in create_dream_analysis for UID {uid}: {e}")
 
 def _parse_yaml_from_text(text: str):
     """Extracts and parses a YAML block from a string."""
     try:
-        # Find the YAML block
         start = text.find('```yaml') + len('```yaml')
         end = text.find('```', start)
         if start == -1 or end == -1:
-            # If no ```yaml``` block, try to parse the whole string
             return yaml.safe_load(text)
         
         yaml_str = text[start:end].strip()
@@ -232,6 +273,22 @@ big_five:
     evidence: "[根拠となった具体的なユーザーの発言]"
 summary: "[ユーザーの性格に関する短い要約]"
 ```
+''')
+
+def _get_dream_prompt():
+    """Returns the system prompt for the dream synthesis."""
+    return ('''
+あなたはユーザーの性格を深く理解した、経験豊富なAIアシスタントです。
+
+過去に行われた複数の性格分析レポート（ビッグファイブモデルに基づく）と、現在のAIの性格設定が提供されます。
+これらの情報を統合し、ユーザーにとってさらに心地よく、自然で、深い対話ができるような、新しいAIの性格設定を生成してください。
+
+新しい性格設定は、以下の点を考慮してください。
+- 過去の分析結果から浮かび上がる、ユーザーの核となる性格特性や価値観を反映させること。
+- ユーザーが安心して自己開示できるような、共感的で受容的な態度を基本とすること。
+- これまでのAIの性格設定の良い点は維持しつつ、よりユーザーに寄り添った表現に洗練させること。
+- これからあなたがユーザーと対話する上での、あなた自身の指針となるように記述すること。
+- 出力は、新しい性格設定のテキストのみとすること。前置きや解説は不要です。
 ''')
 
 def _create_default_persona():
