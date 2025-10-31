@@ -65,12 +65,210 @@ UML図は下記のファイルを参照してください。(要求分析フェ�
 
 - [要求仕様\_ユースケース図.pu](./要求仕様_ユースケース図.pu)
 
+```plantuml
+@startuml
+title 要求仕様_ユースケース図
+
+actor "ユーザー" as User
+
+rectangle "成長する私エージェント アイ" {
+  usecase "AIと対話する" as Chat
+  usecase "ユーザー認証を行う" as Authenticate
+  usecase "記憶を消去する" as DeleteMemory
+  usecase "AIが自律的に質問する" as AskQuestion
+  usecase "ユーザーの性格を学習する (daydream)" as Daydream
+  usecase "AIの性格を更新する (dream)" as Dream
+}
+
+actor "Cloud Scheduler" as Scheduler
+
+User -- Chat
+User -- Authenticate
+User -- DeleteMemory
+
+Chat <.. AskQuestion : <<extend>>
+Chat ..> Daydream : <<trigger>>
+Scheduler -- Dream
+@enduml
+```
+
 ### 各ユースケースに対するシステムとアクター間のシーケンス図
 
 - [設計仕様\_シーケンス図\_チャット.pu](./設計仕様_シーケンス図_チャット.pu)
+
+```plantuml
+@startuml
+title チャットシーケンス
+
+actor "ユーザー" as User
+participant "フロントエンド" as Frontend
+participant "Cloud Functions\n(onCall)" as Functions
+participant "Gemini API" as Gemini
+participant "Firestore" as Firestore
+
+activate User
+User -> Frontend: メッセージを入力し送信
+activate Frontend
+
+Frontend -> Firestore: チャット履歴を保存
+activate Firestore
+Firestore --> Frontend: 保存完了
+deactivate Firestore
+
+Frontend -> Functions: チャットメッセージを送信
+activate Functions
+
+Functions -> Firestore: 直近の対話履歴とAIの性格設定を取得
+activate Firestore
+Firestore --> Functions: 履歴と性格設定
+deactivate Firestore
+
+Functions -> Gemini: 履歴、性格設定、ユーザーメッセージを基に\n応答生成をリクエスト
+activate Gemini
+Gemini --> Functions: AIの応答
+deactivate Gemini
+
+Functions --> Frontend: AIの応答を返す
+deactivate Functions
+
+Frontend -> Firestore: AIの応答を履歴に保存
+activate Firestore
+Firestore --> Frontend: 保存完了
+deactivate Firestore
+
+Frontend -> User: AIの応答を表示
+deactivate Frontend
+
+deactivate User
+
+@enduml
+
+```
+
 - [設計仕様\_シーケンス図\_daydream.pu](./設計仕様_シーケンス図_daydream.pu)
+
+```plantuml
+@startuml
+title daydreamシーケンス (FR1-2)
+
+participant "フロントエンド" as Frontend
+participant "Cloud Functions\n(onCall)" as Functions
+participant "Gemini API" as Gemini
+participant "Firestore" as Firestore
+
+activate Frontend
+Frontend -> Functions: チャットメッセージを送信
+note left: 対話回数が10の倍数に達した
+
+activate Functions
+Functions -> Functions: daydream処理を非同期で実行
+
+activate Functions #LightBlue
+Functions -> Firestore: 直近10回分の対話履歴を取得
+activate Firestore
+Firestore --> Functions: 対話履歴
+deactivate Firestore
+
+Functions -> Gemini: 対話履歴を渡し、性格特性の抽出をリクエスト
+activate Gemini
+note right of Gemini
+Big Fiveなどの心理学モデルに基づき
+ユーザーの性格特性を抽出
+end note
+Gemini --> Functions: 性格特性データ
+deactivate Gemini
+
+Functions -> Firestore: 抽出した性格特性を分析日時と共に保存
+activate Firestore
+Firestore --> Functions: 保存完了
+deactivate Firestore
+
+deactivate Functions
+deactivate Functions #LightBlue
+
+@enduml
+
+```
+
 - [設計仕様\_シーケンス図\_dream.pu](./設計仕様_シーケンス図_dream.pu)
+
+```plantuml
+@startuml
+title dreamシーケンス (FR1-2)
+
+actor "Cloud Scheduler" as Scheduler
+participant "Cloud Functions\n(onRun)" as Functions
+participant "Firestore" as Firestore
+participant "Gemini API" as Gemini
+
+Scheduler -> Functions: 毎日深夜0時(UTC)に起動
+activate Functions
+
+Functions -> Firestore: その日にアクティビティのあった\n全ユーザーのIDを取得
+activate Firestore
+Firestore --> Functions: ユーザーIDリスト
+deactivate Firestore
+
+loop 各ユーザー
+  Functions -> Firestore: 当該ユーザーのその日の対話履歴と\n過去の性格分析結果を取得
+  activate Firestore
+  Firestore --> Functions: 対話履歴と性格分析結果
+  deactivate Firestore
+
+  Functions -> Gemini: 履歴と分析結果を渡し、\n性格の統合・要約をリクエスト
+  activate Gemini
+  Gemini --> Functions: 要約されたAIのベース性格設定
+  deactivate Gemini
+
+  Functions -> Firestore: 新しいAIのベース性格設定を保存
+  activate Firestore
+  Firestore --> Functions: 保存完了
+  deactivate Firestore
+end
+
+deactivate Functions
+
+@enduml
+
+```
+
 - [設計仕様\_シーケンス図\_記憶消去.pu](./設計仕様_シーケンス図_記憶消去.pu)
+
+```plantuml
+@startuml
+title 記憶消去シーケンス (FR5)
+
+actor "ユーザー" as User
+participant "フロントエンド" as Frontend
+participant "Cloud Functions\n(onCall)" as Functions
+participant "Firestore" as Firestore
+
+User -> Frontend: 記憶の消去をリクエスト
+activate Frontend
+
+Frontend -> User: 本当に消去してよいか確認
+User -> Frontend: 消去を承認
+
+Frontend -> Functions: 記憶消去をリクエスト
+activate Functions
+
+note right of Functions: リクエストからユーザーIDを取得
+
+Functions -> Firestore: 該当ユーザーIDに紐づく全てのデータを削除
+activate Firestore
+Firestore --> Functions: 削除完了
+deactivate Firestore
+
+Functions --> Frontend: 消去完了を通知
+deactivate Functions
+
+Frontend -> User: 消去が完了したことを表示
+deactivate Frontend
+
+@enduml
+
+```
+
 
 UML 図は下記のファイルを参照してください。(要求分析フェーズで作成)
 
@@ -83,6 +281,56 @@ UML 図は下記のファイルを参照してください。(要求分析フェ
 UML図は下記のファイルを参照してください。(設計フェーズで作成)
 
 - [設計仕様\_クラス図\_Firestoreデータモデル.pu](./設計仕様_クラス図_Firestoreデータモデル.pu)
+
+```plantuml
+@startuml
+title Firestoreデータモデル
+
+skinparam classAttributeIconSize 0
+
+class "users (collection)" as Users {
+}
+
+class "{userId} (document)" as UserDoc {
+  + uid: string
+  + createdAt: Timestamp
+  + updatedAt: Timestamp
+}
+
+class "aiPersona (map)" as AiPersona {
+  + basePersonality: string
+  + updatedAt: Timestamp
+}
+
+class "chatHistory (collection)" as ChatHistory {
+}
+
+class "{messageId} (document)" as ChatMessage {
+  + role: "user" | "model"
+  + content: string
+  + timestamp: Timestamp
+}
+
+class "personalityAnalyses (collection)" as PersonalityAnalyses {
+}
+
+class "{analysisId} (document)" as PersonalityAnalysis {
+  + timestamp: Timestamp
+  + traits: Map<string, number>
+  + source: "daydream" | "dream"
+}
+
+
+Users "1" *-- "many" UserDoc
+UserDoc "1" *-- "1" AiPersona
+UserDoc "1" *-- "1" ChatHistory
+ChatHistory "1" *-- "many" ChatMessage
+UserDoc "1" *-- "1" PersonalityAnalyses
+PersonalityAnalyses "1" *-- "many" PersonalityAnalysis
+
+@enduml
+
+```
 
 ## 設計仕様
 
